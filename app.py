@@ -31,7 +31,7 @@ font1 = pygame.font.SysFont('JetBrains Mono', 35)
 
 font2 = pygame.font.SysFont('JetBrains Mono', 25)
 white = (255, 255, 255)
-violet = (50, 205, 50)
+violet = (50, 255, 50)
 
 black = (0, 0, 0)
 
@@ -50,31 +50,31 @@ retake = pygame.transform.scale(retake, (button_width, button_height))
 
 
 emotion_start_time = None
-emotion_cooldown = 2
+emotion_cooldown = 1
 
 # Music variables
 current_emotion = None
 music_name = None
 music_playing = False
 music_finished = True
-
+global music_emotion
+music_emotion = ''
+retake_clicked_time = 0
 text2 = None
 
 
 # Function to play music
 def play_music(emotion):
+    global music_playing, music_name,music_finished,music_emotion
     music_folder = f"music/{emotion}"
     music_files = os.listdir(music_folder)
     if music_files and not mixer.music.get_busy():
         
-        global music_playing, music_name,music_finished
+        
+        music_emotion = emotion
         
         
         music_finished = False
-        
-        text2 = font2.render(f"Now Playing for {emotion}:", True, violet)
-        
-        
         
         music_file = random.choice(music_files)
         music_path = os.path.join(music_folder, music_file)
@@ -88,40 +88,58 @@ def play_music(emotion):
 # Function to draw UI elements
 def draw_ui():
     
-    text1 = font1.render(f"Detected Emotion: {detected_emotion}", True, black)
-    ce = 1
+    text1 = font1.render(f"Detected Emotion: {detected_emotion}", True, white)
+    
+    text2 = font2.render(f"Now Playing for {music_emotion}:", True, violet)
     
     
         
     text3 = font2.render(music_name if music_name else "No music playing", True, white)
 
     if predictions is not None and len(predictions) > 0:
-        confidence_text = font1.render('Confidence: {:.1f}%'.format(np.max(predictions[0])  * 100),True,black)
+        confidence_text = font1.render('Confidence: {:.1f}%'.format(np.max(predictions[0])  * 100),True,white)
         screen.blit(confidence_text,(screen_width-250,10))
 
-    screen.blit(text1, (10, 10))
+    overlay = pygame.Surface((screen_width, 150), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 128))  # Black with alpha value (128 for semi-transparent)
+    screen.blit(overlay, (0, screen_height-120 ))
+
+    overlay_buttons = pygame.Surface((screen_width / 2, 50), pygame.SRCALPHA)
+    overlay_buttons.fill((0, 0, 0, 128))  
     
-    if text2:
-        screen.blit(text2, (10, screen_height-150))
-    screen.blit(text3, (10, screen_height-110))
+
+    # Blit the text and buttons
+    screen.blit(text1, (10, 10))
+    screen.blit(text2, (20, screen_height-110))
+    screen.blit(text3, (20, screen_height-80))
+
+
+    
+
+
+
 
     button_pause = pygame.Rect(screen_width / 2, screen_height - 70, 50, 50)
     button_retake = pygame.Rect(screen_width/2 + 100, screen_height - 70, 50, 50)
 
     if  music_playing == True:
         
-        screen.blit(pause_image,(screen_width / 2 , screen_height - 70))
+        screen.blit(pause_image,(screen_width / 2 , screen_height - 60))
     else:
-        screen.blit(play_image, (screen_width / 2 , screen_height - 70))
+        screen.blit(play_image, (screen_width / 2 , screen_height - 60))
 
-    screen.blit(retake, (screen_width / 2 + 100 , screen_height - 70))
+    screen.blit(retake, (screen_width / 2 + 100 , screen_height - 60))
 
 
 
 
 # Capture video and detect emotions
 cap = cv2.VideoCapture(0)
+global detected_emotion
+detected_emotion = ""
+predictions = []
 while True:
+    current_time = time.time()
     ret, frame = cap.read()
 
     # Handle Pygame events
@@ -135,8 +153,8 @@ while True:
         # Control music playback
         if event.type == pygame.MOUSEBUTTONDOWN:
             pos = pygame.mouse.get_pos()
-            button_pause = pygame.Rect(screen_width / 2, screen_height - 70, 50, 50)
-            button_retake = pygame.Rect(screen_width / 2 + 100, screen_height - 70, 50, 50)
+            button_pause = pygame.Rect(screen_width / 2, screen_height - 60, 50, 50)
+            button_retake = pygame.Rect(screen_width / 2 + 100, screen_height - 60, 50, 50)
             if button_pause.collidepoint(pos):
                 if music_playing :
                     mixer.music.pause()
@@ -146,8 +164,11 @@ while True:
                     mixer.music.unpause()
                     music_playing = True
             if button_retake.collidepoint(pos):
-                music_finished = True
-                mixer.music.stop()
+                if music_finished:
+                    retake_clicked_time = current_time
+                    music_finished = True
+                    mixer.music.stop()
+                
 
     # Emotion detection on grayscale image
     gray_image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -165,14 +186,14 @@ while True:
         predictions = model.predict(img_pixels)
         max_index = np.argmax(predictions[0])
         emotions = ('angry', 'disgust', 'fear', 'happy', 'sad', 'surprise', 'neutral')
-        global detected_emotion
+        
         detected_emotion = emotions[max_index]
 
         # Check if the detected emotion has changed
         if current_emotion != detected_emotion and  music_finished:
             current_emotion = detected_emotion
             emotion_start_time = time.time()
-        elif time.time() - emotion_start_time >= emotion_cooldown and music_finished:
+        elif current_time - emotion_start_time >= emotion_cooldown and music_finished:
             play_music(detected_emotion)
 
     # Display the frame
