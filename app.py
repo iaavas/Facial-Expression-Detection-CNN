@@ -9,140 +9,110 @@ from tensorflow.keras.models import load_model, model_from_json
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 from tensorflow.keras.preprocessing import image
 
-
-# Load emotion detection model
 model = model_from_json(open("Facial Expression Recognition.json", "r").read())
 model.load_weights('fer.h5')
 
-# Face detection cascade
 face_haar_cascade = cv2.CascadeClassifier('static\haarcascade_frontalface_default.xml')
 
-
-# Initialize Pygame
 pygame.init()
 mixer.init()
-screen_width = 800
+
+# Screen settings for emotion detection
+screen_width = 600
 screen_height = 600
-screen = pygame.display.set_mode((screen_width, screen_height))
-pygame.display.set_caption("Emotion Based Music Player")
+screen = pygame.display.set_mode((screen_width * 2, screen_height))
+pygame.display.set_caption("Emotion Based Music Recommendation")
 
-# Fonts and colors
-font1 = pygame.font.SysFont('JetBrains Mono', 35)
+# Screen settings for displaying recommended music
+music_screen_width = 300
+music_screen_height = 600
+music_screen = pygame.Surface((music_screen_width, music_screen_height))
+pygame.display.set_caption("Recommended Music")
 
-font2 = pygame.font.SysFont('JetBrains Mono', 25)
+font1 = pygame.font.SysFont('FreeSansBold.ttf', 35)
+font2 = pygame.font.SysFont('FreeSansBold.ttf', 25)
+font3 = pygame.font.SysFont('FreeSansBold.ttf', 30)  
 white = (255, 255, 255)
 violet = (50, 255, 50)
-
 black = (0, 0, 0)
+gray = (128, 128, 128)  # New color for dimmed text
 
-play_image = pygame.image.load('./ui/play_button.png')
 retake = pygame.image.load('./ui/retake.png')
-pause_image = pygame.image.load('./ui/pause_button.png')
-
 button_width = 50
 button_height = 50
-
-pause_image = pygame.transform.scale(pause_image, (button_width, button_height))
-play_image = pygame.transform.scale(play_image, (50, 50))
 retake = pygame.transform.scale(retake, (button_width, button_height))
 
+emotion_start_time = 0
+emotion_cooldown = 10
 
-
-
-emotion_start_time = None
-emotion_cooldown = 1
-
-# Music variables
 current_emotion = None
-music_name = None
-music_playing = False
-music_finished = True
-global music_emotion
+music_recommendations = []
 music_emotion = ''
 retake_clicked_time = 0
 text2 = None
 
+consecutive_emotion_count = 0
+consecutive_emotion_threshold = 3  
 
-# Function to play music
-def play_music(emotion):
-    global music_playing, music_name,music_finished,music_emotion
+def recommend_music(emotion):
+    global music_recommendations, music_emotion
     music_folder = f"music/{emotion}"
     music_files = os.listdir(music_folder)
-    if music_files and not mixer.music.get_busy():
-        
-        
+    if music_files:
         music_emotion = emotion
-        
-        
-        music_finished = False
-        
-        music_file = random.choice(music_files)
-        music_path = os.path.join(music_folder, music_file)
-        mixer.music.load(music_path)
-        mixer.music.play()
-        music_playing = True
-        music_name = music_file.split(".")[0]
-        music_finished = True
+        music_recommendations = random.sample(music_files,7)
+        music_recommendations = [music_file.split(".")[0] for music_file in music_recommendations]
+    else:
+        music_recommendations = []
 
+def draw_music_screen():
+    music_screen.fill(black)
+    if music_recommendations:
+        for i, music in enumerate(music_recommendations):
+            text = font2.render(music, True, white)
+            music_screen.blit(text, (20, 20 + i * 40))  # Increased line spacing
+    else:
+        text = font2.render("No recommendation available", True, violet)
+        music_screen.blit(text, (20, 20))
 
-# Function to draw UI elements
+    # Draw a background for the music details
+    music_details_bg = pygame.Surface((music_screen_width - 40, 120), pygame.SRCALPHA)
+    music_details_bg.fill((0, 0, 0, 200))  #
+    music_screen.blit(music_details_bg, (20, music_screen_height - 140))
+
+    # Draw the music emotion and recommendation count
+    if music_recommendations:
+        emotion_text = font3.render(f"Emotion: {music_emotion.capitalize()}", True, white)
+        count_text = font3.render(f"Recommendations: {len(music_recommendations)}", True, white)
+        music_screen.blit(emotion_text, (30, music_screen_height - 130))
+        music_screen.blit(count_text, (30, music_screen_height - 110))
+    else:
+        dimmed_text = font3.render("No recommendations available", True, gray)
+        music_screen.blit(dimmed_text, (30, music_screen_height - 120))
+
+    screen.blit(music_screen, (screen_width, 0))
+    pygame.display.update()
+
 def draw_ui():
-    
-    text1 = font1.render(f"Detected Emotion: {detected_emotion}", True, white)
-    
-    text2 = font2.render(f"Now Playing for {music_emotion}:", True, violet)
-    
-    
-        
-    text3 = font2.render(music_name if music_name else "No music playing", True, white)
+    text1 = font1.render(f"Detected Emotion: {detected_emotion.capitalize()}", True, white)
 
     if predictions is not None and len(predictions) > 0:
-        confidence_text = font1.render('Confidence: {:.1f}%'.format(np.max(predictions[0])  * 100),True,white)
-        screen.blit(confidence_text,(screen_width-250,10))
+        confidence_text = font1.render('Confidence: {:.1f}%'.format(np.max(predictions[0]) * 100), True, white)
+        screen.blit(confidence_text, (screen_width - 250, 10))
 
     overlay = pygame.Surface((screen_width, 150), pygame.SRCALPHA)
     overlay.fill((0, 0, 0, 128))  # Black with alpha value (128 for semi-transparent)
-    screen.blit(overlay, (0, screen_height-120 ))
+    # screen.blit(overlay, (0, screen_height - 120))
 
-    overlay_buttons = pygame.Surface((screen_width / 2, 50), pygame.SRCALPHA)
-    overlay_buttons.fill((0, 0, 0, 128))  
-    
-
-    # Blit the text and buttons
     screen.blit(text1, (10, 10))
-    screen.blit(text2, (20, screen_height-110))
-    screen.blit(text3, (20, screen_height-80))
 
-
-    
-
-
-
-
-    button_pause = pygame.Rect(screen_width / 2, screen_height - 70, 50, 50)
-    button_retake = pygame.Rect(screen_width/2 + 100, screen_height - 70, 50, 50)
-
-    if  music_playing == True:
-        
-        screen.blit(pause_image,(screen_width / 2 , screen_height - 60))
-    else:
-        screen.blit(play_image, (screen_width / 2 , screen_height - 60))
-
-    screen.blit(retake, (screen_width / 2 + 100 , screen_height - 60))
-
-
-
-
-# Capture video and detect emotions
 cap = cv2.VideoCapture(0)
-global detected_emotion
 detected_emotion = ""
 predictions = []
 while True:
     current_time = time.time()
     ret, frame = cap.read()
 
-    # Handle Pygame events
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             cap.release()
@@ -150,27 +120,15 @@ while True:
             pygame.quit()
             break
 
-        # Control music playback
         if event.type == pygame.MOUSEBUTTONDOWN:
             pos = pygame.mouse.get_pos()
-            button_pause = pygame.Rect(screen_width / 2, screen_height - 60, 50, 50)
             button_retake = pygame.Rect(screen_width / 2 + 100, screen_height - 60, 50, 50)
-            if button_pause.collidepoint(pos):
-                if music_playing :
-                    mixer.music.pause()
-                    music_playing = False
-                    music_finished = False
-                else:
-                    mixer.music.unpause()
-                    music_playing = True
             if button_retake.collidepoint(pos):
-                if music_finished:
-                    retake_clicked_time = current_time
-                    music_finished = True
-                    mixer.music.stop()
-                
+                emotion_start_time = time.time()
+                retake_clicked_time = current_time
+                music_recommendations = []
+                consecutive_emotion_count = 0  # Reset consecutive emotion count
 
-    # Emotion detection on grayscale image
     gray_image = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     faces = face_haar_cascade.detectMultiScale(gray_image, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
 
@@ -182,21 +140,23 @@ while True:
         img_pixels = np.expand_dims(img_pixels, axis=0)
         img_pixels /= 255
 
-        # Predict emotions
         predictions = model.predict(img_pixels)
         max_index = np.argmax(predictions[0])
         emotions = ('angry', 'disgust', 'fear', 'happy', 'sad', 'surprise', 'neutral')
-        
-        detected_emotion = emotions[max_index]
+        new_detected_emotion = emotions[max_index]
 
-        # Check if the detected emotion has changed
-        if current_emotion != detected_emotion and  music_finished:
-            current_emotion = detected_emotion
-            emotion_start_time = time.time()
-        elif current_time - emotion_start_time >= emotion_cooldown and music_finished:
-            play_music(detected_emotion)
+        if new_detected_emotion == detected_emotion:
+            consecutive_emotion_count += 1
+        else:
+            consecutive_emotion_count = 1
 
-    # Display the frame
+        detected_emotion = new_detected_emotion
+
+        if consecutive_emotion_count >= consecutive_emotion_threshold:
+            if current_emotion != detected_emotion:
+                current_emotion = detected_emotion
+                recommend_music(detected_emotion)
+
     frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
     frame = np.rot90(frame)
     frame = pygame.surfarray.make_surface(frame)
@@ -205,5 +165,6 @@ while True:
     screen.fill(black)
     screen.blit(frame, (0, 0))
     draw_ui()
-    pygame.display.update()
+    draw_music_screen()
 
+    pygame.display.update()
